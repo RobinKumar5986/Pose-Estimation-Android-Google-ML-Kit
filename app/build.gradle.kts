@@ -46,4 +46,9 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+
+    // If you want to use the base sdk
+    implementation("com.google.mlkit:pose-detection:18.0.0-beta5")
+    // If you want to use the accurate sdk
+    implementation("com.google.mlkit:pose-detection-accurate:18.0.0-beta5")
 }
