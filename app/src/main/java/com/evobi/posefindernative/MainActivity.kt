@@ -2,8 +2,12 @@ package com.evobi.posefindernative
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.os.Bundle
 import android.util.Log
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -22,8 +26,7 @@ import java.nio.ByteBuffer
 class MainActivity : AppCompatActivity() {
 
     //UI Components
-    lateinit var defaultTextView: TextView
-
+    lateinit var poseImage: ImageView
 
     // Base pose detector with streaming frames, when depending on the pose-detection sdk
     val optionsBase = PoseDetectorOptions.Builder()
@@ -49,13 +52,13 @@ class MainActivity : AppCompatActivity() {
         startPoseEstimation()
     }
     private fun UiLinker(){
-        defaultTextView = findViewById<TextView>(R.id.helloWorld)
+        poseImage = findViewById<ImageView>(R.id.imgPoseEstimation)
     }
     private fun startPoseEstimation(){
         val bitmap: Bitmap = BitmapFactory.decodeResource(resources, R.drawable.person)
         val image = InputImage.fromBitmap(bitmap, 0)
 
-        getPoseEstimation(image)
+        getPoseEstimation(image,bitmap)
     }
     private fun imageFromBuffer(byteBuffer: ByteBuffer, rotationDegrees: Int) {
         val image = InputImage.fromByteBuffer(
@@ -67,10 +70,13 @@ class MainActivity : AppCompatActivity() {
         )
         getPoseEstimation(image)
     }
-    private fun getPoseEstimation(image: InputImage) {
+    private fun getPoseEstimation(image: InputImage,originalBitmap: Bitmap? = null) {
         poseDetector.process(image)
             .addOnSuccessListener { pose: Pose ->
                 logAllPoseLandmarks(pose)
+                originalBitmap?.let { bitmap ->
+                    drawPoseOnImage(pose, bitmap)
+                }
             }
             .addOnFailureListener { e: Exception ->
                 Log.e("Pose Error",e.message.toString())
@@ -141,5 +147,84 @@ class MainActivity : AppCompatActivity() {
                         "  - InFrameLikelihood: $inFrameLikelihood\n"
             )
         }
+    }
+    private fun drawPoseOnImage(pose: Pose, originalBitmap: Bitmap) {
+        // Create a mutable copy of the original image
+        val mutableBitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(mutableBitmap)
+        val paintCircle = Paint().apply {
+            color = Color.RED
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+        val paintLine = Paint().apply {
+            color = Color.GREEN
+            strokeWidth = 12f
+            style = Paint.Style.STROKE
+            isAntiAlias = true
+        }
+
+        // Helper to get landmark safely
+        fun getLandmark(type: Int): PoseLandmark? = pose.getPoseLandmark(type)
+
+        // Define the skeleton connections (standard ML Kit pose connections)
+        val connections = listOf(
+            Pair(PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER),
+            Pair(PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_ELBOW),
+            Pair(PoseLandmark.LEFT_ELBOW, PoseLandmark.LEFT_WRIST),
+            Pair(PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_ELBOW),
+            Pair(PoseLandmark.RIGHT_ELBOW, PoseLandmark.RIGHT_WRIST),
+            Pair(PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_HIP),
+            Pair(PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_HIP),
+            Pair(PoseLandmark.LEFT_HIP, PoseLandmark.RIGHT_HIP),
+            Pair(PoseLandmark.LEFT_HIP, PoseLandmark.LEFT_KNEE),
+            Pair(PoseLandmark.LEFT_KNEE, PoseLandmark.LEFT_ANKLE),
+            Pair(PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE),
+            Pair(PoseLandmark.RIGHT_KNEE, PoseLandmark.RIGHT_ANKLE),
+
+            // Face connections (optional - for eyes, ears, mouth)
+            Pair(PoseLandmark.LEFT_EAR, PoseLandmark.LEFT_EYE_OUTER),
+            Pair(PoseLandmark.LEFT_EYE_OUTER, PoseLandmark.LEFT_EYE),
+            Pair(PoseLandmark.LEFT_EYE, PoseLandmark.LEFT_EYE_INNER),
+            Pair(PoseLandmark.LEFT_EYE_INNER, PoseLandmark.NOSE),
+            Pair(PoseLandmark.NOSE, PoseLandmark.RIGHT_EYE_INNER),
+            Pair(PoseLandmark.RIGHT_EYE_INNER, PoseLandmark.RIGHT_EYE),
+            Pair(PoseLandmark.RIGHT_EYE, PoseLandmark.RIGHT_EYE_OUTER),
+            Pair(PoseLandmark.RIGHT_EYE_OUTER, PoseLandmark.RIGHT_EAR),
+            Pair(PoseLandmark.LEFT_MOUTH, PoseLandmark.RIGHT_MOUTH)
+        )
+
+        // Draw lines for connections
+        for ((firstType, secondType) in connections) {
+            val first = getLandmark(firstType)
+            val second = getLandmark(secondType)
+            if (first != null && second != null) {
+                // Optional: only draw if both have good in-frame likelihood
+                if (first.inFrameLikelihood > 0.5f && second.inFrameLikelihood > 0.5f) {
+                    canvas.drawLine(
+                        first.position.x,
+                        first.position.y,
+                        second.position.x,
+                        second.position.y,
+                        paintLine
+                    )
+                }
+            }
+        }
+
+        // Draw circles on all landmarks
+        for (landmark in pose.allPoseLandmarks) {
+            if (landmark.inFrameLikelihood > 0.5f) {
+                canvas.drawCircle(
+                    landmark.position.x,
+                    landmark.position.y,
+                    12f,
+                    paintCircle
+                )
+            }
+        }
+
+        // Set the resulting image to the ImageView
+        poseImage.setImageBitmap(mutableBitmap)
     }
 }
